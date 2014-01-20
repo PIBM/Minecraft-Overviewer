@@ -49,7 +49,7 @@ overviewer.views.WorldView = Backbone.View.extend({
             if (!tset.get("isOverlay")) { return; };
 
         });
-    },
+    }
 });
 
 
@@ -549,7 +549,7 @@ overviewer.views.SignControlView = Backbone.View.extend({
         itemDiv.appendChild(textNode);
         itemDiv.style.whiteSpace = "nowrap";
 
-    },
+    }
 });
 
 /**

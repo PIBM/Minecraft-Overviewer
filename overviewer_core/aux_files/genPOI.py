@@ -18,13 +18,12 @@ import os
 import logging
 import json
 import sys
+import re
 import Queue
 import multiprocessing
 
 from multiprocessing import Process
 from multiprocessing import Pool
-
-from functools import partial
 from optparse import OptionParser
 
 from overviewer_core import logger
@@ -40,7 +39,11 @@ def replaceBads(s):
         x = x.replace(bad,"_")
     return x
 
-def parseBucketChunks(bucket, rset):
+# yes there's a double parenthesis here
+# see below for when this is called, and why we do this
+# a smarter way would be functools.partial, but that's broken on python 2.6
+# when used with multiprocessing
+def parseBucketChunks((bucket, rset)):
     pid = multiprocessing.current_process().pid
     pois = dict(TileEntities=[], Entities=[]);
   
@@ -48,9 +51,12 @@ def parseBucketChunks(bucket, rset):
     cnt = 0
     l = len(bucket)
     for b in bucket:
-        data = rset.get_chunk(b[0],b[1])
-        pois['TileEntities'] += data['TileEntities']
-        pois['Entities']     += data['Entities']
+        try:
+            data = rset.get_chunk(b[0],b[1])
+            pois['TileEntities'] += data['TileEntities']
+            pois['Entities']     += data['Entities']
+        except nbt.CorruptChunkError:
+            logging.warning("Ignoring POIs in corrupt chunk %d,%d", b[0], b[1])
 
         # Perhaps only on verbose ?
         i = i + 1
@@ -78,9 +84,12 @@ def handleEntities(rset, outputdir, render, rname, config):
 
     if numbuckets == 1:
         for (x,z,mtime) in rset.iterate_chunks():
-            data = rset.get_chunk(x,z) 
-            rset._pois['TileEntities'] += data['TileEntities']
-            rset._pois['Entities']     += data['Entities']
+            try:
+                data = rset.get_chunk(x,z) 
+                rset._pois['TileEntities'] += data['TileEntities']
+                rset._pois['Entities']     += data['Entities']
+            except nbt.CorruptChunkError:
+                logging.warning("Ignoring POIs in corrupt chunk %d,%d", x,z)
   
     else:
         buckets = [[] for i in range(numbuckets)];
@@ -93,12 +102,9 @@ def handleEntities(rset, outputdir, render, rname, config):
         for b in buckets:
             logging.info("Buckets has %d entries", len(b));
   
-        # create the partial to lock the rset
-        dest = partial(parseBucketChunks, rset=rset)
-  
         # Create a pool of processes and run all the functions
         pool = Pool(processes=numbuckets)
-        results = pool.map(dest, buckets)
+        results = pool.map(parseBucketChunks, ((buck, rset) for buck in buckets))
   
         logging.info("All the threads completed")
   
@@ -116,9 +122,17 @@ def handlePlayers(rset, render, worldpath):
     # only handle this region set once
     if 'Players' in rset._pois:
         return
-    dimension = {None: 0,
-                 'DIM-1': -1,
-                 'DIM1': 1}[rset.get_type()]
+    dimension = None
+    try:
+        dimension = {None: 0,
+                     'DIM-1': -1,
+                     'DIM1': 1}[rset.get_type()]
+    except KeyError, e:
+        mystdim = re.match(r"^DIM_MYST(\d+)$", e.message)  # Dirty hack. Woo!
+        if mystdim:
+            dimension = int(mystdim.group(1))
+        else:
+            raise
     playerdir = os.path.join(worldpath, "players")
     if os.path.isdir(playerdir):
         playerfiles = os.listdir(playerdir)
@@ -179,7 +193,7 @@ def main():
     logger.configure()
 
     parser = OptionParser(usage=helptext)
-    parser.add_option("--config", dest="config", action="store", help="Specify the config file to use.")
+    parser.add_option("-c", "--config", dest="config", action="store", help="Specify the config file to use.")
     parser.add_option("--quiet", dest="quiet", action="count", help="Reduce logging output")
     parser.add_option("--skip-scan", dest="skipscan", action="store_true", help="Skip scanning for entities when using GenPOI")
     parser.add_option("--forcerender", dest="forcerender", action="store_true", help="Force the parsing of every POI.")
