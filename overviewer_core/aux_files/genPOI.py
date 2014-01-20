@@ -30,6 +30,7 @@ from optparse import OptionParser
 from overviewer_core import logger
 from overviewer_core import nbt
 from overviewer_core import configParser, world
+from overviewer_core import dispatcher
 
 def replaceBads(s):
     "Replaces bad characters with good characters!"
@@ -170,10 +171,10 @@ def main():
 
     if os.path.basename(sys.argv[0]) == """genPOI.py""":
         helptext = """genPOI.py
-            %prog --config=<config file> [--quiet]"""
+            %prog --config=<config file> [--forcerender] [--quiet]"""
     else:
         helptext = """genPOI
-            %prog --genpoi --config=<config file> [--quiet]"""
+            %prog --genpoi --config=<config file> [--forcerender] [--quiet]"""
 
     logger.configure()
 
@@ -181,6 +182,7 @@ def main():
     parser.add_option("--config", dest="config", action="store", help="Specify the config file to use.")
     parser.add_option("--quiet", dest="quiet", action="count", help="Reduce logging output")
     parser.add_option("--skip-scan", dest="skipscan", action="store_true", help="Skip scanning for entities when using GenPOI")
+    parser.add_option("--forcerender", dest="forcerender", action="store_true", help="Force the parsing of every POI.")
 
     options, args = parser.parse_args()
     if not options.config:
@@ -200,11 +202,27 @@ def main():
         return 1
 
     destdir = config['outputdir']
+  
     # saves us from creating the same World object over and over again
     worldcache = {}
 
     markersets = set()
     markers = dict()
+
+    # Check if we read back previous values
+    if not options.forcerender:
+      # Read the file back
+      with open(os.path.join(destdir, "markersDB.js"), "r") as input:
+        input.seek(15, 0);
+        markerSetDict = json.loads(input.read()[:-2]);
+
+      with open(os.path.join(destdir, "markers.js"), "r") as input:
+        input.seek(13, 0);
+        markers = json.loads(input.read()[:-2]);
+
+      
+          
+
 
     for rname, render in config['renders'].iteritems():
         try:

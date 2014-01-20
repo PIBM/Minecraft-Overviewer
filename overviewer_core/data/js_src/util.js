@@ -1,4 +1,14 @@
 overviewer.util = {
+    'warp': function (url) {
+      $.getJSON(
+        '/mcweather/test.php?' + url,
+        function(data) {
+          alert("Result: " + data.res);
+        }
+      );
+
+      return false;
+    },
     
     // vars for callback
     readyQueue: [],
@@ -455,7 +465,9 @@ overviewer.util = {
      */
     'createMarkerInfoWindow': function(marker) {
         var windowContent = '<div class="infoWindow"><img src="' + marker.icon +
-            '"/><p>' + marker.content.replace(/\n/g,'<br/>') + '</p></div>';
+            '"/><p>' + marker.content.replace(/\n/g,'<br/>') + 
+            (marker.allowtp ? "<br/><a href='#' onclick='overviewer.util.warp(\"pos_x="+marker.x+"&pos_y="+marker.y+"&pos_z="+marker.z+"&dim=" + marker.dim +"\"); return false;'>Warp There</a>" : "") +
+            '</p></div>';
         var infowindow = new google.maps.InfoWindow({
             'content': windowContent
         });

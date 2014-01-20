@@ -17,12 +17,30 @@
 <script type="text/javascript" src="backbone.js"></script>
 <script type="text/javascript" src="overviewerConfig.js"></script>
 <script type="text/javascript" src="overviewer.js"></script>
-<script type="text/javascript" src="baseMarkers.js"></script>
+<script>
+  document.write('<script src="baseMarkers.js?ts=' + Math.random() + '"><' + '/script>');
+</script>
+<script type="text/javascript" src="/mcweather/user.js"></script>
 
 </head>
 
 <!-- Generated at: {time} -->
 <body onload="overviewer.util.initialize()">
   <div id="mcmap"></div>
+
+   <div style="position:absolute; bottom:35px; right:5px; width:140px; height:*;color:#FFFFFF;font-family:Arial;">
+       <div id="userlogin" name="userlogin" style="font-size:70%; position:relative; top:5px; opacity:0.9;">
+       </div>
+   </div>
+
+
+  <div style="position:absolute; top: 5px; margin-left: 50%; margin-right: 50%; width:0px; background-color: #000; color:#FFFFFF;font-family:Arial;">
+      <div style="position:relative; opacity:0.9; width: 80px; height: 40px; margin-left: -40px; background-color: #000; border: 1px solid darkgray">
+          <div id='t_bed' style='background-image: url( mcweather/Grid_Bed.png ); width: 32px; height: 32px;  margin: 3px; float: left;'></div>
+          <div id='t_portal' style='background-image: url( mcweather/Grid_Portal.png ); width: 32px; height: 32px;  margin: 3px; float: right;'></div>
+      </div>
+  </div>
+
+
 </body>
 </html>

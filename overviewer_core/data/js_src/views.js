@@ -448,6 +448,7 @@ overviewer.views.SignControlView = Backbone.View.extend({
         //
         for (i in dataRoot) {
             var groupName = dataRoot[i].groupName;
+            var isTP = groupName.indexOf('TP') == 0;
             if (!dataRoot[i].created) {
                 dataRoot[i].markerObjs = [];
                 for (j in markersDB[groupName].raw) {
@@ -464,7 +465,11 @@ overviewer.views.SignControlView = Backbone.View.extend({
                             'title':    jQuery.trim(entity.hovertext), 
                             'content':  jQuery.trim(entity.text),
                             'icon':     iconURL,
-                            'visible':  false
+                            'visible':  false,
+                            'x': entity.x,
+                            'y': entity.y,
+                            'z': entity.z,
+                            'allowtp': (isTP) ? 1 : 0
                     }); 
                     if(entity['createInfoWindow'] == true) {
                         overviewer.util.createMarkerInfoWindow(marker);
