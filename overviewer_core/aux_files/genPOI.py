@@ -60,14 +60,24 @@ def parseBucketChunks((bucket, rset)):
 
         # Perhaps only on verbose ?
         i = i + 1
-        if i == 250:
+        if i == 500:
             i = 0
-            cnt = 250 + cnt
+            cnt = 500 + cnt
             logging.info("Found %d entities and %d tile entities in thread %d so far at %d chunks", len(pois['Entities']), len(pois['TileEntities']), pid, cnt);
 
     return pois
 
-def handleEntities(rset, outputdir, render, rname, config):
+def displayPairsCount(pm):
+  for rsetname, c1 in pm.iteritems():
+    cnt = 0
+    for x, c2 in c1.iteritems():
+      for z, c3 in c2.iteritems():
+        cnt = cnt + 1
+
+    logging.info("Rset %s has %d entries", rsetname, cnt)
+  
+
+def handleEntities(rset, outputdir, render, rname, config, last_render, previousMarkers):
 
     # if we're already handled the POIs for this region regionset, do nothing
     if hasattr(rset, "_pois"):
@@ -82,25 +92,64 @@ def handleEntities(rset, outputdir, render, rname, config):
     if numbuckets < 0:
         numbuckets = multiprocessing.cpu_count()
 
+    displayPairsCount(previousMarkers)
+
     if numbuckets == 1:
-        for (x,z,mtime) in rset.iterate_chunks():
+        for (x,z,mtime) in rset.iterate_chunks() if last_render == 0 else rset.iterate_newer_chunks(last_render):
+          if mtime > last_render:
             try:
-                data = rset.get_chunk(x,z) 
+                data = rset.get_chunk(x,z)
+
                 rset._pois['TileEntities'] += data['TileEntities']
                 rset._pois['Entities']     += data['Entities']
+
+                #[rsethash][cx][cz][name][]
+                if rname not in previousMarkers:
+                  continue
+
+                if x not in previousMarkers[rname]:
+                  continue
+
+                if z not in previousMarkers[rname][x]:
+                  continue
+
+                del previousMarkers[rname][x][z]
+                deletecnt = deletecnt + 1
+
             except nbt.CorruptChunkError:
                 logging.warning("Ignoring POIs in corrupt chunk %d,%d", x,z)
   
     else:
         buckets = [[] for i in range(numbuckets)];
   
-        for (x,z,mtime) in rset.iterate_chunks():
+        logging.info("Last Render: %d", last_render)
+
+        deletecnt = 0
+
+        for (x,z,mtime) in rset.iterate_chunks() if last_render == 0 else rset.iterate_newer_chunks(last_render):
+          if mtime > last_render:
             i = x / 32 + z / 32
             i = i % numbuckets 
             buckets[i].append([x,z])
-  
+
+            #[rsethash][cx][cz][name][]
+            if rname not in previousMarkers:
+              continue
+
+            if x not in previousMarkers[rname]:
+              continue
+
+            if z not in previousMarkers[rname][x]:
+              continue
+
+            del previousMarkers[rname][x][z]
+            deletecnt = deletecnt + 1
+
+        logging.info("Deleted %d entries in %s", deletecnt, rname)
+        displayPairsCount(previousMarkers)
+
         for b in buckets:
-            logging.info("Buckets has %d entries", len(b));
+          logging.info("Buckets has %d entries", len(b));
   
         # Create a pool of processes and run all the functions
         pool = Pool(processes=numbuckets)
@@ -181,6 +230,16 @@ def handleManual(rset, manualpois):
     if manualpois:
         rset._pois['Manual'].extend(manualpois)
 
+def addMarkers(markerSetDict, orderedPreviousMarkers, name, rsetname, groupname):
+  # print(orderedPreviousMarkers);
+  for x, c1 in orderedPreviousMarkers[rsetname].iteritems():
+    for z, c2 in c1.iteritems():
+      if groupname in c2:
+        for marker in c2[groupname]:
+          # logging.info("Adding a marker in chunk (%d, %d): %s", x, z, marker['text'])
+          markerSetDict[name]['raw'].append(marker)
+
+
 def main():
 
     if os.path.basename(sys.argv[0]) == """genPOI.py""":
@@ -223,18 +282,68 @@ def main():
     markersets = set()
     markers = dict()
 
+    # create a quick way to fetch the previous markers
+    orderedPreviousMarkers = {}
+
+    # Initialize the last rendering check
+    last_render = 0
+    max_chunk_mtime = 0
+
     # Check if we read back previous values
     if not options.forcerender:
+      previousMarkerMapping = {}
+
       # Read the file back
-      with open(os.path.join(destdir, "markersDB.js"), "r") as input:
-        input.seek(15, 0);
-        markerSetDict = json.loads(input.read()[:-2]);
-
       with open(os.path.join(destdir, "markers.js"), "r") as input:
-        input.seek(13, 0);
-        markers = json.loads(input.read()[:-2]);
+        input.seek(12, 0)
+        previousMarkersLink = json.loads(input.read()[:-2])
 
-      
+        for rendername, content in previousMarkersLink.iteritems():
+          logging.info("Render %s:", rendername)
+  
+          for obj in content:
+            logging.info("  %s", obj["groupName"][:-9])
+            previousMarkerMapping[obj["groupName"]] = {'name': obj["groupName"][:-9], 'world': rendername}
+          
+
+      with open(os.path.join(destdir, "markersDB.js"), "r") as input:
+        input.seek(14, 0)
+        previousMarkerSetDict = json.loads(input.read()[:-2])
+
+        #[world][cx][cz][groupname][]
+        for filtername, content in previousMarkerSetDict.iteritems():
+          rsetname = previousMarkerMapping[filtername]['world']
+          groupName = previousMarkerMapping[filtername]['name']
+
+          if rsetname not in orderedPreviousMarkers:
+            orderedPreviousMarkers[rsetname] = {}
+
+          logging.info("RSet Name: %s     Group Name: %s", rsetname, groupName)
+          for rawtype, objlist in content.iteritems():
+            if (type(objlist) == list):
+              # logging.info("Raw Type: %s", rawtype)
+              for marker in objlist:
+  
+                cx = marker['x'] / 16
+                cz = marker['z'] / 16
+
+                if type in marker and (type == 'player' or type == 'manual'):
+                  continue
+
+                if cx not in orderedPreviousMarkers[rsetname]:
+                  orderedPreviousMarkers[rsetname][cx] = {}
+
+                if cz not in orderedPreviousMarkers[rsetname][cx]:
+                  orderedPreviousMarkers[rsetname][cx][cz] = {}
+                
+                if groupName not in orderedPreviousMarkers[rsetname][cx][cz]:
+                  orderedPreviousMarkers[rsetname][cx][cz][groupName] = []
+
+                orderedPreviousMarkers[rsetname][cx][cz][groupName].append(marker) 
+
+      with open(os.path.join(destdir, "baseMarkers.js"), "r") as input:
+        input.seek(23, 0)
+        last_render = long(input.readline()[:-2])
           
 
 
@@ -261,7 +370,7 @@ def main():
             return 1
       
         for f in render['markers']:
-            markersets.add(((f['name'], f['filterFunction']), rset))
+            markersets.add(((f['name'], f['filterFunction']), rset, rname))
             name = replaceBads(f['name']) + hex(hash(f['filterFunction']))[-4:] + "_" + hex(hash(rset))[-4:]
             to_append = dict(groupName=name, 
                     displayName = f['name'], 
@@ -274,8 +383,13 @@ def main():
             except KeyError:
                 markers[rname] = [to_append]
         
+        #[rsethash][cx][cz][name][]
+
+        logging.info("Requesting the entities for %s", rname)
+
         if not options.skipscan:
-            handleEntities(rset, os.path.join(destdir, rname), render, rname, config)
+            max_chunk_mtime = handleEntities(rset, os.path.join(destdir, rname), render, rname, config, last_render, orderedPreviousMarkers)
+
 
         handlePlayers(rset, render, worldpath)
         handleManual(rset, render['manualpois'])
@@ -283,12 +397,13 @@ def main():
     logging.info("Done handling POIs")
     logging.info("Writing out javascript files")
     markerSetDict = dict()
-    for (flter, rset) in markersets:
+    for (flter, rset, rsetname) in markersets:
         # generate a unique name for this markerset.  it will not be user visible
         filter_name =     flter[0]
         filter_function = flter[1]
 
-        name = replaceBads(filter_name) + hex(hash(filter_function))[-4:] + "_" + hex(hash(rset))[-4:]
+        groupname = replaceBads(filter_name)
+        name = groupname + hex(hash(filter_function))[-4:] + "_" + hex(hash(rset))[-4:]
         markerSetDict[name] = dict(created=False, raw=[], name=filter_name)
         for poi in rset._pois['Entities']:
             result = filter_function(poi)
@@ -301,7 +416,11 @@ def main():
                     d.update({"icon": poi['icon']})
                 if "createInfoWindow" in poi:
                     d.update({"createInfoWindow": poi['createInfoWindow']})
+
+                d.update({'type': 'entity'})
+
                 markerSetDict[name]['raw'].append(d)
+
         for poi in rset._pois['TileEntities']:
             result = filter_function(poi)
             if result:
@@ -329,6 +448,9 @@ def main():
                     d.update({"icon": poi['icon']})
                 if "createInfoWindow" in poi:
                     d.update({"createInfoWindow": poi['createInfoWindow']})
+
+                d.update({'type': 'tileentity'})
+
                 markerSetDict[name]['raw'].append(d)
         for poi in rset._pois['Players']:
             result = filter_function(poi)
@@ -357,6 +479,9 @@ def main():
                     d.update({"icon": poi['icon']})
                 if "createInfoWindow" in poi:
                     d.update({"createInfoWindow": poi['createInfoWindow']})
+
+                d.update({'type': 'player'})
+
                 markerSetDict[name]['raw'].append(d)
         for poi in rset._pois['Manual']:
             result = filter_function(poi)
@@ -385,8 +510,12 @@ def main():
                     d.update({"icon": poi['icon']})
                 if "createInfoWindow" in poi:
                     d.update({"createInfoWindow": poi['createInfoWindow']})
+
+                d.update({'type': 'manual'})
+
                 markerSetDict[name]['raw'].append(d)
-    #print markerSetDict
+
+        addMarkers(markerSetDict, orderedPreviousMarkers, name, rsetname, groupname)
 
     with open(os.path.join(destdir, "markersDB.js"), "w") as output:
         output.write("var markersDB=")
@@ -397,9 +526,11 @@ def main():
         json.dump(markers, output, indent=2)
         output.write(";\n");
     with open(os.path.join(destdir, "baseMarkers.js"), "w") as output:
+        output.write("var markerLastRender = " + str(max(last_render, max_chunk_mtime)) + ";\n");
         output.write("overviewer.util.injectMarkerScript('markersDB.js');\n")
         output.write("overviewer.util.injectMarkerScript('markers.js');\n")
         output.write("overviewer.collections.haveSigns=true;\n")
+
     logging.info("Done")
 
 if __name__ == "__main__":
