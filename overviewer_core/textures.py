@@ -914,15 +914,15 @@ def saplings(self, blockid, data):
     # usual saplings
     tex = self.load_image_texture("assets/minecraft/textures/blocks/sapling_oak.png")
     
-    if data & 0x3 == 1: # spruce sapling
+    if data & 0x7 == 1: # spruce sapling
         tex = self.load_image_texture("assets/minecraft/textures/blocks/sapling_spruce.png")
-    elif data & 0x3 == 2: # birch sapling
+    elif data & 0x7 == 2: # birch sapling
         tex = self.load_image_texture("assets/minecraft/textures/blocks/sapling_birch.png")
-    elif data & 0x3 == 3: # jungle sapling
+    elif data & 0x7 == 3: # jungle sapling
         tex = self.load_image_texture("assets/minecraft/textures/blocks/sapling_jungle.png")
-    elif data & 0x3 == 4: # acacia sapling
+    elif data & 0x7 == 4: # acacia sapling
         tex = self.load_image_texture("assets/minecraft/textures/blocks/sapling_acacia.png")
-    elif data & 0x3 == 5: # dark oak/roofed oak/big oak sapling
+    elif data & 0x7 == 5: # dark oak/roofed oak/big oak sapling
         tex = self.load_image_texture("assets/minecraft/textures/blocks/sapling_roofed_oak.png")
     return self.build_sprite(tex)
 
